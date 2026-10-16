@@ -1,0 +1,21 @@
+{
+  "name": "lattice-skills",
+  "owner": {
+    "name": "adalinxx"
+  },
+  "metadata": {
+    "description": "Agent skills for people who run, mine on, transact with, or build apps on lattice-node.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "lattice",
+      "description": "Skills for using lattice-node: Lattice concepts, running a node, child chains, wallets and transactions, mining, troubleshooting, and building apps on Lattice chains.",
+      "version": "0.1.0",
+      "author": {
+        "name": "adalinxx"
+      },
+      "source": "./"
+    }
+  ]
+}
