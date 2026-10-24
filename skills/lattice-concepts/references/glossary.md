@@ -36,7 +36,10 @@
 - **Grind**: one physical proof-of-work attempt, identified by its root CID.
 - **Mined root**: the outer block whose hash is evaluated along a proof path.
 - **Predecessor**: the previous block on the same chain.
-- **Chain root**: a genesis block in that path's accepted forest.
+- **Chain root**: a genesis block in a chain path's accepted forest.
+- **Forest**: a chain path's accepted same-chain blocks. It can have several
+  roots, because any genesis carried by a valid proof competes; only Nexus pins
+  one genesis.
 - **CID**: content identifier, DAG-CBOR + SHA-256. Blocks, transactions,
   specs, state and WASM modules are all addressed by CID. Any provider may
   supply the bytes, because the consumer re-hashes them.

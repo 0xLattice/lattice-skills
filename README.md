@@ -50,7 +50,8 @@ change. The skills tell the agent to trust the user's installed binaries
 (`lattice <cmd> --help`) over the text whenever the two disagree.
 
 The documentation at [lattice.build/docs](https://lattice.build/docs/) is the source of truth; it
-also publishes this repository's glossary, misconceptions and reference files.
+also publishes this repository's glossary, misconceptions and some of its
+reference files.
 Where the code and the docs disagree, the skills follow the code and say so.
 
 ## Contributing
