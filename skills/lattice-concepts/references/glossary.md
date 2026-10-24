@@ -34,6 +34,12 @@
   not need to be valid or canonical on its own chain for the work it carries
   to count for the child.
 - **Grind**: one physical proof-of-work attempt, identified by its root CID.
+- **Mined root**: the outer block whose hash is evaluated along a proof path.
+- **Predecessor**: the previous block on the same chain.
+- **Chain root**: a genesis block in a chain path's accepted forest.
+- **Forest**: a chain path's accepted same-chain blocks. It can have several
+  roots, because any genesis carried by a valid proof competes; only Nexus pins
+  one genesis.
 - **CID**: content identifier, DAG-CBOR + SHA-256. Blocks, transactions,
   specs, state and WASM modules are all addressed by CID. Any provider may
   supply the bytes, because the consumer re-hashes them.
@@ -92,6 +98,7 @@
   verified from the header and proof. *Validated* means the block has been
   executed and its `postState` matches. *Canonical* means it is on the
   preferred path. A node never acts on a tip that is only weighed.
+- **Accepted**: locally validated consensus evidence retained in the forest.
 - **trueCumWork**: the total work of a block plus all its same-chain
   descendants, with work de-duplicated per grind.
 - **Hierarchical GHOST**: starting from genesis, step to the child with the
