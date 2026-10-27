@@ -18,7 +18,7 @@ check `lattice <subcommand> --help` on the user's build.
 Build from source (Swift 6.1+, macOS 15+ or Linux with SQLite dev headers):
 
 ```bash
-git clone https://github.com/adalinxx/lattice-node.git && cd lattice-node
+git clone https://github.com/0xLattice/lattice-node.git && cd lattice-node
 swift build -c release
 for b in lattice lattice-node lattice-mining-coordinator lattice-miner; do
   sudo install -m 0755 .build/release/$b /usr/local/bin/$b
@@ -27,7 +27,7 @@ done
 
 Alternatively, use a release archive and verify it first:
 `shasum -a 256 -c <archive>.sha256` and
-`gh attestation verify <archive> --repo adalinxx/lattice-node`.
+`gh attestation verify <archive> --repo 0xLattice/lattice-node`.
 
 **Install all four binaries from the same build, in the same directory.**
 `lattice` looks for `lattice-node` next to itself (falling back to

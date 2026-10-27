@@ -122,7 +122,7 @@ else by CID:
    characters; `list(prefix)` enumerates a subtree.
 
 The node has no generic "get key" HTTP route, so this trie walk *is* the
-read path. The JS SDK (https://github.com/adalinxx/lattice-sdk) provides
+read path. The JS SDK (https://github.com/0xLattice/lattice-sdk) provides
 `VolumeClient`, `HTTPVolumeTransport`, the block and state decoders, and
 `ChainNodes` (it finds a node for any chain by walking
 `/api/chain/endpoints`). It isn't reliably published to a registry. The
