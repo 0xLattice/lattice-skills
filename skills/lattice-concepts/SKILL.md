@@ -136,5 +136,5 @@ reward" (it burns it).
 - `references/misconceptions.md` — the full list, with corrections.
 
 Upstream specs: Lattice `docs/spec.md`, `docs/philosophy.md` and
-`docs/cross-chain.md` in https://github.com/adalinxx/Lattice; the node's
-`docs/` folder in https://github.com/adalinxx/lattice-node.
+`docs/cross-chain.md` in https://github.com/0xLattice/Lattice; the node's
+`docs/` folder in https://github.com/0xLattice/lattice-node.

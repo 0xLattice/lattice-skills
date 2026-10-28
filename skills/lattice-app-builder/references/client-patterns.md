@@ -1,7 +1,7 @@
 # Client patterns (JavaScript)
 
 These snippets follow the public moniker, fanfare and stoa clients. `sdk` is
-a vendored, pinned build of https://github.com/adalinxx/lattice-sdk.
+a vendored, pinned build of https://github.com/0xLattice/lattice-sdk.
 
 ## Tip → verified state
 

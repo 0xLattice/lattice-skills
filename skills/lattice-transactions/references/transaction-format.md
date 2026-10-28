@@ -53,7 +53,7 @@ A signature over the bare body CID is **invalid**. The set of signature keys
 (converted to addresses) must equal `signers` exactly.
 
 Don't hand-roll DAG-CBOR and CIDs unless you have to. The JS SDK
-(https://github.com/adalinxx/lattice-sdk; vendor a pinned build, as the
+(https://github.com/0xLattice/lattice-sdk; vendor a pinned build, as the
 public apps do) provides `accountFromPrivateKey`, `signTransactionBody` and
 `transactionPayload`. From Swift, use the Lattice package itself.
 

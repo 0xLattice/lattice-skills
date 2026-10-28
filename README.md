@@ -1,8 +1,8 @@
 # Lattice skills
 
 Agent skills for people who run, mine on, transact with, or build apps on
-[lattice-node](https://github.com/adalinxx/lattice-node), the full node for
-the [Lattice](https://github.com/adalinxx/Lattice) hierarchical proof-of-work
+[lattice-node](https://github.com/0xLattice/lattice-node), the full node for
+the [Lattice](https://github.com/0xLattice/Lattice) hierarchical proof-of-work
 protocol.
 
 Install these and your coding agent will know the `lattice` CLI,
@@ -24,7 +24,7 @@ and the pitfalls operators and app authors hit.
 ### Claude Code
 
 ```text
-/plugin marketplace add adalinxx/lattice-skills
+/plugin marketplace add 0xLattice/lattice-skills
 /plugin install lattice@lattice-skills
 ```
 
@@ -38,7 +38,7 @@ Each skill is a standard `SKILL.md` folder. Copy the folders under
 without the plugin, that's `~/.claude/skills/`):
 
 ```bash
-git clone https://github.com/adalinxx/lattice-skills
+git clone https://github.com/0xLattice/lattice-skills
 cp -R lattice-skills/skills/* ~/.claude/skills/
 ```
 
