@@ -1,13 +1,14 @@
 ---
 name: lattice-transactions
-description: Lattice wallet keys, balances and transactions through lattice-node — `lattice key generate`, `lattice tx send/deposit/receipt/withdraw`, how fees and nonces really work, checking inclusion, cross-chain parent↔child exchange, raw POST /transactions, and the node HTTP API. Use when a user wants to create a wallet, send coins, check a balance or transaction, move value between a parent and child chain, or call the lattice-node HTTP API.
+description: Lattice keys, balances and transactions through lattice-node — `lattice key generate`, `lattice tx send/deposit/receipt/withdraw`, how fees and nonces really work, checking inclusion, cross-chain parent↔child exchange, raw POST /transactions, and the node HTTP API. Use when a user wants to create a wallet, send coins, check a balance or transaction, move value between a parent and child chain, or call the lattice-node HTTP API.
 ---
 
 # Keys, transactions and the HTTP API
 
-Written against lattice-node `main` and Lattice 45.2.0. Every 64/128-bit
-number in the JSON API (balances, nonces, heights, amounts) is a **decimal
-string**. A JSON number is rejected with 400.
+Every 64/128-bit number in the JSON API (balances, nonces, heights,
+amounts) is a **decimal string**. A JSON number is rejected with 400. Check
+`lattice tx <subcommand> --help` on the user's build before relying on a
+flag.
 
 ## Keys
 
@@ -46,15 +47,20 @@ lattice tx send --root R --chain Nexus/Alpha --key ./wallet.json \
 
 Common options for every `tx` subcommand:
 
-- `--chain` (required): an absolute path, either `Nexus` or a chain in
-  `hostedChains`.
-- `--key` (required).
-- `--fee` (default 0).
-- `--nonce` (default: the larger of the committed nonce and the signer's
-  highest pending nonce + 1).
+- `--chain` (required): an absolute path, either `Nexus` or a chain this
+  node hosts.
+- `--key` (required). A key file readable by group or others is refused.
+- `--fee` (default: the node's `minRelayFee`).
+- `--nonce` (default: the key's next nonce on that chain).
 
-The CLI submits to the local node's loopback RPC, so **the chain must be
-hosted by this node**.
+The CLI submits through the node under `--root` (or `--node <url>
+--token-file <file>` for a node elsewhere), so **the chain must be hosted by
+that node**.
+
+**One pending transaction per key.** The pool holds only a transaction that
+can execute on the current tip. While a key has a transaction pending, the
+CLI refuses to send another for it: run the command again once the first is
+mined.
 
 ## How fees actually work
 
@@ -63,26 +69,27 @@ hosted by this node**.
   recipient. A transaction that creates value (negative surplus) is never
   accepted.
 - `--fee N` adds an extra debit of N from the signer that nothing credits.
-- Nodes enforce their own `minRelayFee` floor (default 0). Read it with
+- Nodes enforce their own `minRelayFee` floor (default 1). Read it with
   `GET /api/chain/info?chainPath=…` → `minRelayFee`. Below the floor, the
   submit fails with 400 `belowMinRelayFee`. Different nodes can set
   different floors.
-- **Replace-by-fee**: resubmitting with the same signers and nonce replaces
-  the pending transaction only if the fee is strictly higher. Otherwise it
-  fails with 400 `feeTooLow`.
+- **Replacement**: a transaction that shares a nonce, a state key, a deposit
+  or a receipt with pooled transactions displaces them only if it pays
+  enough more. Otherwise it fails with 400 `feeTooLow`.
+- To price a fee on a busy chain, read `GET /api/fees`.
 
 ## Nonces
 
-Each signer has one nonce, and nonces must be contiguous. If the nonce is
-too low, the transaction is invalid. If it is too high, the node **accepts it
-with a 200 but parks it as `future`** until the gap fills. A transaction with
-several signers advances every signer's nonce.
+Only a transaction's **first signer** has a nonce checked and advanced;
+co-signers' nonces are untouched. Nonces must be consecutive. If the nonce
+is too low, the transaction is invalid (`invalidState`). If it is too high,
+the node **refuses it with `nonceAhead`**: send it again once the earlier
+transaction is mined. Nothing is parked.
 
 ## Confirming inclusion
 
-**A 200 from submit is not inclusion.** The transaction may be parked
-(`future` or `unavailable`), and it can still be replaced, evicted or
-reorged out. Check:
+**A 200 from submit is not inclusion.** The transaction is pooled, and it
+can still be replaced, evicted or reorganized out. Check:
 
 ```bash
 curl -s --user "$C" "$B/api/transaction/<txcid>?chainPath=Nexus/Alpha" | jq '{blockHeight, blockHash}'
@@ -90,8 +97,8 @@ curl -s --user "$C" "$B/api/transaction/<txcid>?chainPath=Nexus/Alpha" | jq '{bl
 
 `blockHeight` and `blockHash` appear only once the transaction is in the
 canonical executed chain. `GET /api/mempool?chainPath=…` lists pending CIDs
-(up to 200). There is no finality, so for high-value transfers wait several
-blocks and re-check.
+(a bounded list). There is no finality, so for high-value transfers wait
+several blocks and re-check.
 
 ## Cross-chain exchange (parent ↔ direct child)
 
@@ -151,19 +158,28 @@ key as bytes; key files store hex) and calls `POST /transactions`
 directly, `references/transaction-format.md` gives the JSON body, the
 signing envelope and how to build fee and nonce. That route is on the
 operator port (cookie + `Content-Type: application/json`), or on a public
-host that runs `publicSubmit`.
+host that runs `publicSubmit`. In JavaScript, use the SDK
+(`npm install @adalin/lattice-sdk`): `signTransactionBody`,
+`transactionPayload` and `HTTPTransactionSubmitter`.
 
 ## Errors you'll see
 
 | Response | Meaning |
 |---|---|
-| 400 `invalidState` | Every consensus refusal: bad signature, stale nonce, insufficient balance, missing deposit or receipt, wrong `chainPath`, a policy reject. Re-read the balance, nonce and keys to find which. |
+| 400 `invalidState` | It can never be pooled as it is: bad signature, stale nonce, a balance that cannot pay, missing deposit or receipt, a policy reject. Re-read the balance, nonce and keys to find which. Do not resend unchanged. |
+| 400 `nonceAhead` | An earlier transaction from the same first signer is not mined yet. Resend once it is. |
+| 400 `unavailable` | The node cannot judge it yet (state, a policy module or a withdrawal's receipt it lacks). Resend later. |
+| 400 `insufficientFunds` | An account it debits cannot also pay what pooled transactions already debit it. Resend once those are mined. |
 | 400 `belowMinRelayFee` | Raise `--fee` to at least that node's `minRelayFee`. |
-| 400 `feeTooLow` / `conflictingNonce` | Replacing a pending transaction without a higher fee, or the signer sets overlap at that nonce. |
+| 400 `feeTooLow` | It conflicts with pooled transactions (same nonce, state key, deposit or receipt) and does not pay enough to displace them. Raise the fee. |
+| 400 `tooLarge` | It cannot fit in a block by itself. |
 | 404 `unknownChain` | This node doesn't host that `chainPath`. |
-| 429 `full` | The mempool is full, or the signer has 64 parked transactions. |
-| 503 `contextChanged` / `busy` | The tip moved, or the node is temporarily busy. Retry. |
-| CLI `X is not in the tree` | `--chain` isn't hosted. Add it to `hostedChains`. |
+| 429 `full` | The pool is full of transactions paying a higher rate. Resend later, or raise the fee. |
+| 503 `busy` | The node is temporarily busy. Retry after its `Retry-After`. |
+| CLI refuses the `--chain` | The node does not host it. Host it with `lattice child host`. |
 | CLI `the chain has no readable tip yet` | Wait until `lattice status` shows `active`. |
 
-For every route, see `references/http-api.md`.
+`references/http-api.md` has the same table with what to retry, and the
+routes used most. Every route is at
+https://lattice.build/docs/build/http-api/ (reads and submits:
+https://lattice.build/docs/build/http-api/reads-and-transactions/).
