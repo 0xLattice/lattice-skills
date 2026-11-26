@@ -65,7 +65,7 @@ try {
 change made by someone else in between makes the write fail (`rejected`)
 instead of being overwritten. Who signs and who pays depends on the `key`
 and `sponsors` options of `connect`
-([Getting started](https://github.com/0xLattice/lattice-sdk/blob/main/docs/getting-started.md#3-write)).
+([Getting started](https://github.com/0xLattice/lattice-sdk/blob/main/docs/getting-started.md)).
 
 `chain.set` writes one string under one key. Build the transaction yourself,
 as in the next three sections, when a write must:

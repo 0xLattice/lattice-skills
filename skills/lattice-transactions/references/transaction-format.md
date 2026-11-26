@@ -2,7 +2,7 @@
 
 The JSON a node accepts at `POST /transactions`, and how to sign it. Use
 this when you build a transaction yourself rather than with the `lattice tx`
-commands, the [Lattice SDK](https://github.com/0xLattice/lattice-sdk/blob/main/docs/getting-started.md#build-sign-and-submit-a-transfer)
+commands, the [Lattice SDK](https://github.com/0xLattice/lattice-sdk/blob/main/docs/getting-started.md)
 or the user's wallet.
 
 ## Body
