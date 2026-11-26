@@ -1,6 +1,6 @@
 ---
 name: lattice-mining
-description: Mine Lattice (Nexus plus every hosted child chain at once) with lattice-node — the `mine` block in lattice.json, `lattice mine start/stop/status`, running `lattice-mining-coordinator` directly or under systemd, reward recipients, checking rewards, GPU or remote workers and the worker contract, and reading mine.log. Use when a user wants to mine, set payout addresses, check mining rewards, plug in a GPU miner, or debug why mining isn't producing blocks.
+description: Mine Lattice (Nexus plus every hosted child chain at once) with lattice-node — the miner's settings in miner.json, `lattice mine start/stop/status/run`, running `lattice-mining-coordinator` directly or under systemd, mining through a node on another machine, reward recipients, checking rewards, GPU or remote workers and the worker contract, and reading the miner's log. Use when a user wants to mine, set payout addresses, check mining rewards, plug in a GPU miner, or debug why mining isn't producing blocks.
 ---
 
 # Mining Lattice
@@ -16,16 +16,19 @@ Mining is **external** to the node, and three roles share the work:
 One hash is checked against every hosted chain's target. **You mine exactly
 the chains your node hosts.** To mine a child, host it.
 
+The operator page is https://lattice.build/docs/run/mining/.
+
 ## Quick start (CLI-managed)
 
 ```bash
 lattice key generate --out ./miner-wallet.json             # copy the address:
 ```
 
-Add a `mine` block to `<root>/lattice.json`:
+Write `<root>/miner.json`. It is the miner's own file: the node never reads
+it, and mining settings do not go in `lattice.json`.
 
 ```json
-"mine": {
+{
   "worker": "cpu",
   "workers": 4,
   "recipients": { "Nexus": "<address>", "Nexus/Alpha": "<address>" }
@@ -35,25 +38,63 @@ Add a `mine` block to `<root>/lattice.json`:
 Then:
 
 ```bash
-lattice mine start  --root R      # background; log at R/log/mine.log
-lattice mine status --root R      # running + recipients ("none configured (rewards and fees burn)" is a red flag)
-lattice mine stop   --root R      # finishes the batch, 60 s grace
+lattice mine start  --root R      # background; pidfile R/run/mine.pid, log R/log/mine.log
+lattice mine status --root R      # running, the node it mines through, recipients
+lattice logs --miner --root R     # the mining loop's recent output
+lattice mine stop   --root R      # finishes or bounds the active round, then stops
 ```
 
-**Every chain without a recipient burns its reward and fees.** No key is
-needed on the mining host, only addresses. Rewards and fees go to the
-header's `rewardRecipient`; there are no reward transactions.
+`recipients: none configured (rewards and fees burn)` in `mine status` is a
+red flag. **Every chain without a recipient burns its reward and fees.** No
+key is needed on the mining host, only addresses. Rewards and fees go to the
+block's `rewardRecipient`; there are no reward transactions.
 
-**Restart mining after any config change.** `lattice mine` reads
-`lattice.json` once at start. A child added later gets no recipient until
-you run `lattice mine stop && lattice mine start`, and its rewards burn in
-the meantime.
+**A changed `miner.json` applies to the next round without a restart.** The
+loop reads the file again before each round. A file that no longer checks is
+logged and the last good settings are kept. So after hosting a new child,
+add its recipient to `miner.json`; until then its rewards burn.
 
-All `mine` keys (`batchSize`, `minWork`, `minBlockIntervalSeconds`,
-`templateTimeoutSeconds`, `roundDeadlineMultiplier`) are documented in the
-`lattice-node-operator` skill, `references/lattice-json.md`.
+## miner.json keys
 
-## Production: coordinator under systemd
+| Key | Default | Meaning |
+|---|---|---|
+| `worker` | `cpu` | `cpu` for the bundled worker, or the path of an executable that follows the worker contract. |
+| `workers` | 1 | How many workers to run. |
+| `batchSize` | 2000000000 | Nonces a worker tries per batch. |
+| `recipients` | none | The address each chain's reward and fees go to, by chain path. |
+| `minWork` | scheduled target | A minimum work per block by chain path, such as `{"Nexus": "2^32"}`. A local filter on what the miner submits. |
+| `minBlockIntervalSeconds` | none | The shortest gap between two blocks this miner produces. |
+| `templateTimeoutSeconds` | 60 | How long to wait for the node to answer a template request. 60 is also the most it can be. |
+| `roundDeadlineMultiplier` | 10 | Headroom on the round deadline. |
+
+An unknown key is refused. `--config <file>` names another settings file.
+
+## Mining through a node on another machine
+
+```bash
+# Beside the node: a token with the three routes a miner needs.
+lattice tokens create miner --out miner.token --root /var/lib/lattice \
+  --route "POST /mining/templates" --route "POST /mining/work" --route "GET /status"
+
+# On the mining machine, with its own root for settings, pidfile and log:
+lattice mine start --root /var/lib/lattice-miner \
+  --node http://10.0.0.5:8090 --token-file miner.token
+```
+
+The node must have its remote operator listener on (`operatorListen`; see
+the `lattice-node-operator` skill).
+
+## Under a process manager
+
+- `lattice emit-systemd --root R` prints `lattice-mine.service` beside the
+  node's unit when the root holds miner settings. It runs
+  `lattice mine run`, the same loop in the foreground.
+- Or run the coordinator yourself, as the lattice-node repository's
+  `deploy/lattice-mining-coordinator.service` does. That unit reads
+  `RECIPIENT_ARGS` from `/etc/lattice/mining.env` (mode 0640) and refuses to
+  start when it names no recipient.
+
+Use one or the other for a node, not both.
 
 ```bash
 lattice-mining-coordinator \
@@ -64,23 +105,8 @@ lattice-mining-coordinator \
   --recipient Nexus=<address> --recipient Nexus/Alpha=<address>
 ```
 
-| Flag | Default | Notes |
-|---|---|---|
-| `--node` | required | node RPC base URL |
-| `--rpc-cookie-file` | none | re-read on every request |
-| `--workers` | CPU count − 1 | |
-| `--batch-size` | 2e9 with an external worker | with `--once` this is the total across all workers |
-| `--worker-executable` | in-process search | path to the worker binary |
-| `--recipient P=addr` | none | repeat once per chain |
-| `--min-work P=work` | none | local filter (`2^N` or a decimal) |
-| `--once` | off | one batch, one JSON line, then exit |
-| `--no-stale-probe` | off | disables the 2 s freshness probe |
-
-The repo's `deploy/lattice-mining-coordinator.service` reads `RECIPIENT_ARGS`
-from `/etc/lattice/mining.env` (mode 0640) and refuses to start if the value
-is empty. Alternatively, `lattice emit-systemd` prints a
-`lattice-mine.service` that runs `lattice mine run --root R`. Split it out
-of the output, as described in the operator skill.
+Check `lattice-mining-coordinator --help` for the other flags (`--once`,
+`--batch-size`, `--min-work`, `--token-file`).
 
 ## Checking rewards
 
@@ -93,26 +119,30 @@ curl -s --user "$C" "$B/api/state/account/<address>?chainPath=Nexus/Alpha" | jq 
 
 `rewardCredited` is the reward plus fees; `"0"` means it was burned. There is
 no rewards CLI. Remember there is no finality: a block you mined can be
-reorged out.
+reorganized out.
 
 ## How merged mining picks targets
 
 - The template carries Nexus and the latest candidate block of each hosted
-  child, recursively. The node sets `searchTarget` to the **easiest** target
-  that advances at least one chain.
-- A hit that clears only child targets returns the disposition `childOnly`.
-  The coordinator submits it and then **continues** toward harder targets.
+  child, recursively. Its `searchTarget` is the **easiest** target it
+  carries.
+- A hit that clears only some targets returns the disposition `childOnly`.
+  The coordinator submits it and then **continues** toward the harder ones.
+- A new transaction or child candidate changes the template, and the miner
+  fetches new work even when the Nexus tip did not move. Work already
+  issued stays valid: a solution on an old tip becomes a side block.
 - Child geneses use the easiest target, so a new child is mined in almost
   immediately once its parent is ready.
-- `minWork` only filters which hits the miner keeps. It never changes
-  consensus difficulty. A binding `minWork` cuts the difficulty feedback
-  loop, so prefer `minBlockIntervalSeconds` for pacing. Either one throttles
-  the **whole subtree**, because children are mined together with Nexus.
+- `minWork` only filters which hits the miner submits. Blocks still commit
+  their scheduled target. A filter on a chain the work still carries stops
+  the whole search at that filter, so prefer `minBlockIntervalSeconds` for
+  pacing.
 
 ## GPU and remote workers
 
-Set `mine.worker` (or `--worker-executable`) to any executable that follows
-the contract in `references/worker-contract.md`. The main rules:
+Set `worker` in `miner.json` (or `--worker-executable`) to any executable
+that follows the contract in `references/worker-contract.md`. The main
+rules:
 
 - Print exactly one JSON line on stdout.
 - Report the **lowest** winning nonce.
@@ -120,16 +150,17 @@ the contract in `references/worker-contract.md`. The main rules:
 
 No GPU worker ships in the lattice-node repo.
 
-## Reading mine.log
+## Reading the miner's log
 
 | Line | Meaning / action |
 |---|---|
 | `accepted tip=…` | A block was accepted. |
-| `NOT MINING: no usable template answer …` | The node is bootstrapping (409), unavailable (503) or slow (more than `templateTimeoutSeconds`, max 60). Wait for sync, then check `lattice status`. It retries every 5 s. |
-| `ROUND DEADLINE EXCEEDED` | The round ran longer than the deadline. Raise `roundDeadlineMultiplier` if your rounds really are that long. |
-| `ROUND TEARDOWN DEGRADED … stray lattice-miner` | A worker subtree may have leaked. Run `pgrep lattice-miner` and kill any strays. |
-| `the node refused this round's work; retrying` | The work went stale or was invalid. One occurrence is normal; if it repeats, check node and worker versions match. |
+| `NOT MINING: no usable template answer …` | The node gave no usable answer within `templateTimeoutSeconds`. Check that the node runs and is synced (`lattice status`). It retries. |
+| `ROUND DEADLINE EXCEEDED` | The round ran past its deadline and was abandoned; the next round retries. Raise `roundDeadlineMultiplier` in `miner.json` if rounds here really run that long. |
+| `ROUND TEARDOWN DEGRADED …` | A worker's processes may have leaked. Run `pgrep lattice-miner` and kill any strays. |
+| `the node refused this round's work; retrying` | The work went stale or was invalid. One occurrence is normal; if it repeats, check that node and worker versions match. |
 | `pacing: holding …` | `minBlockIntervalSeconds` is in effect. |
+| `mining on with the settings read before: …` | `miner.json` no longer checks; fix it. |
 
 Mining dispositions from `POST /mining/work`: `canonicalized` (new tip),
 `acceptedSide` (a valid side block), `childOnly`, `duplicate`, `invalid`.
@@ -137,9 +168,9 @@ Mining dispositions from `POST /mining/work`: `canonicalized` (new tip),
 ## Gotchas
 
 - Running `mine start` twice fails with `mining already running`.
-- `no [mine] section in lattice.json`: add the `mine` block.
-- `mining configuration names unhosted chain P`: either host P, or remove it
-  from `recipients` and `minWork`.
+- `no miner settings at …/miner.json`: write the file.
+- An older `lattice.json` may hold a `mine` object. The node ignores it.
+  While there is no `miner.json`, the miner copies it there once.
 - A nested child can't start until its parent changes state. A parent whose
   rewards burn (no recipient) and which gets no transactions never will.
 - Use one release for all four binaries.

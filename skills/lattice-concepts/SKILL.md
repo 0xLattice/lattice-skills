@@ -17,9 +17,9 @@ of chains that the operator picks. Mining is external: the node serves block
 templates, and separate `lattice-mining-coordinator` / `lattice-miner`
 processes search nonces.
 
-Written against lattice-node `main` (Oct 2026) and Lattice 45.2.0. If what you
-see on a user's machine disagrees (help text, error strings), trust the
-machine and say so.
+The documentation at https://lattice.build/docs/ is authoritative. If what
+you see on a user's machine disagrees with this text (help text, error
+strings), trust the machine and say so.
 
 ## The model in ten facts
 
@@ -71,7 +71,7 @@ machine and say so.
 | Component | Does | Never does |
 |---|---|---|
 | Lattice (library) | validation, state transition, work, fork choice | networking, storage, RPC |
-| lattice-node | sync, storage (`state.db` + `volumes.db`), mempool, templates, RPC | redefine consensus, run a nonce loop |
+| lattice-node | sync, storage (`state.db` + `volumes/`), mempool, templates, RPC | redefine consensus, run a nonce loop |
 | Ivy | authenticated P2P transport, discovery | validate content |
 | cashew / VolumeBroker | content-addressed tries, Volume storage | decide validity |
 | Tally | local peer reputation | protocol validity |
@@ -97,8 +97,8 @@ because a child trusts only the parent it can check for itself.
   that follows the contract (see `lattice-mining`).
 - Run public read and submit endpoints and get listed by explorers without
   asking anyone.
-- Build apps that read verified state by CID and write through a wallet (see
-  `lattice-app-builder`).
+- Build apps that read verified state by CID and write through the user's
+  wallet (see `lattice-app-builder`).
 
 ## Hard limits — say these plainly
 
@@ -109,9 +109,11 @@ because a child trusts only the parent it can check for itself.
   deposit has **no timeout, cancel or refund**: without a matching receipt
   and withdrawal it stays locked forever. Moving between a grandchild and
   Nexus takes two separate exchanges.
-- No finality and no standard confirmation depth.
+- No finality and no standard confirmation depth. (A node's operator may
+  set a node-local finality window; that is one node's policy.)
 - No storage migrations. An incompatible release is a **flag day**: wipe the
-  chain data, keep identity and config, and resync.
+  chain data (`lattice wipe` keeps identity, configuration and specs), and
+  sync again.
 - No `assumevalid`. New nodes re-execute from genesis.
 - Data availability is the operators' choice: a chain lives only while
   someone stores and serves it.
@@ -121,19 +123,21 @@ because a child trusts only the parent it can check for itself.
 ## Misconceptions to correct
 
 Read `references/misconceptions.md` when a user's framing sounds like
-Ethereum, Bitcoin sidechains, Cosmos zones or rollups. The most common ones:
-"the parent validates the child", "children inherit Nexus security", "N
-confirmations is final", "transactions have a fee field", "a cross-chain
-transfer can be refunded", and "omitting a reward recipient defers the
-reward" (it burns it).
+Ethereum, Bitcoin sidechains, Cosmos zones or rollups, and correct it
+plainly. The most common ones: "the parent validates the child", "children
+inherit Nexus security", "N confirmations is final", "transactions have a
+fee field", "a cross-chain transfer can be refunded", and "omitting a
+reward recipient defers the reward" (it burns it).
 
 ## References
 
-- `references/glossary.md` — precise definitions of about 50 terms (carrier,
-  grind, Volume, prevState/parentState, attributed work, …).
+- `references/glossary.md` — definitions, basic terms first (tip, mempool,
+  coinbase, Volume), then carrier, grind, prevState/parentState, attributed
+  work and the operator's terms.
 - `references/economics.md` — the reward schedule, premine, fee rule, Nexus
   parameters, and security economics.
-- `references/misconceptions.md` — the full list, with corrections.
+- `references/misconceptions.md` — the full list, as "misconception / what
+  is true", grouped by topic.
 
 Upstream specs: Lattice `docs/spec.md`, `docs/philosophy.md` and
 `docs/cross-chain.md` in https://github.com/0xLattice/Lattice; the node's

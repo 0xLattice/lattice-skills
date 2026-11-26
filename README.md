@@ -44,18 +44,38 @@ cp -R lattice-skills/skills/* ~/.claude/skills/
 
 ## Versions
 
-Written against lattice-node `main` (October 2026) and Lattice 45.2.0.
-Lattice has flag-day releases, so CLI flags, defaults and error strings can
-change. The skills tell the agent to trust the user's installed binaries
-(`lattice <cmd> --help`) over the text whenever the two disagree.
+Written against lattice-node `main` in November 2026, which pins Lattice
+59.3.0, and against lattice-sdk 0.2.0. Lattice has flag-day releases, so CLI
+flags, defaults and error strings can change. The skills tell the agent to
+trust the user's installed binaries (`lattice <cmd> --help`) over the text
+whenever the two disagree.
 
-The documentation at [lattice.build/docs](https://lattice.build/docs/) is the source of truth; it
-also publishes this repository's glossary, misconceptions and some of its
-reference files.
-Where the code and the docs disagree, the skills follow the code and say so.
+The documentation at [lattice.build/docs](https://lattice.build/docs/) is
+the source of truth. Where a node document is authoritative for a subject
+(configuration, the mining worker contract, the HTTP API), the skill's
+reference is a short summary that links to it.
+
+## Reference files the docs site publishes
+
+The site publishes these files as pages for human readers, so they are
+written as plain reference, not as instructions to an agent:
+
+| File | Page |
+|---|---|
+| [glossary.md](skills/lattice-concepts/references/glossary.md) | Glossary |
+| [misconceptions.md](skills/lattice-concepts/references/misconceptions.md) | Common misconceptions |
+| [client-patterns.md](skills/lattice-app-builder/references/client-patterns.md) | Client patterns |
+| [policy.md](skills/lattice-app-builder/references/policy.md) | Validity policies |
+| [chainspec.md](skills/lattice-child-chains/references/chainspec.md) | ChainSpec reference |
+| [transaction-format.md](skills/lattice-transactions/references/transaction-format.md) | Transaction format |
+
+In these files, link to a URL or a file rather than naming a skill, keep
+every snippet complete or say what it assumes, and keep each fact in one
+file.
 
 ## Contributing
 
 Corrections are welcome. Please cite the source file or doc section for any
 behaviour you add or change. Keep each `SKILL.md` short, and put detail in
-its `references/` folder.
+its `references/` folder. Do not copy a node document into a reference:
+summarize what an agent needs at hand and link to the page.

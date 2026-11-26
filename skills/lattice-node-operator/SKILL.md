@@ -1,21 +1,29 @@
 ---
 name: lattice-node-operator
-description: Install, configure, run, upgrade and back up a lattice-node host with the `lattice` operator CLI — init, up/down, status, lattice.json, peers and NAT, public read/submit endpoints, systemd, flag-day wipes. Use when a user wants to run a Lattice node, edit lattice.json, expose a node publicly, set up systemd, upgrade binaries, or back up and restore node data.
+description: Install, configure, run, upgrade and back up a lattice-node host with the `lattice` operator CLI — init, up/down/restart, status, logs, `lattice config`, lattice.json and config.d fragments, peers and NAT, public read/submit endpoints, remote operator tokens, systemd/launchd, wipes after an incompatible release. Use when a user wants to run a Lattice node, change its configuration, expose a node publicly, set up systemd, upgrade binaries, or back up and restore node data.
 ---
 
 # Running a lattice-node host
 
-One `lattice-node` process hosts Nexus plus every child chain listed in
-`lattice.json`. It has one identity, one P2P port, one store and one RPC.
-The `lattice` CLI is how operators drive it. For the concepts, see the
-`lattice-concepts` skill.
+One `lattice-node` process hosts Nexus plus every child chain in its
+configuration. It has one identity, one overlay port, one data directory and
+one operator API. The `lattice` CLI is how operators drive it. For the
+concepts, see the `lattice-concepts` skill.
 
-Written against lattice-node `main` (Oct 2026). Before you rely on a flag,
-check `lattice <subcommand> --help` on the user's build.
+The operator documentation at https://lattice.build/docs/run/getting-started/
+is authoritative. Before you rely on a flag, check
+`lattice <subcommand> --help` on the user's build, and trust the machine
+over this text when they disagree.
 
 ## Install
 
-Build from source (Swift 6.1+, macOS 15+ or Linux with SQLite dev headers):
+A release, on macOS (Apple silicon) or Linux (x86-64):
+
+```bash
+curl -fsSL https://lattice.build/install.sh | sh    # checks the SHA-256; installs to ~/.lattice/bin
+```
+
+Or from source (Swift 6.1+, and the SQLite development headers on Linux):
 
 ```bash
 git clone https://github.com/0xLattice/lattice-node.git && cd lattice-node
@@ -25,205 +33,235 @@ for b in lattice lattice-node lattice-mining-coordinator lattice-miner; do
 done
 ```
 
-Alternatively, use a release archive and verify it first:
-`shasum -a 256 -c <archive>.sha256` and
-`gh attestation verify <archive> --repo 0xLattice/lattice-node`.
-
-**Install all four binaries from the same build, in the same directory.**
+**Install all four binaries from the same release, in the same directory.**
 `lattice` looks for `lattice-node` next to itself (falling back to
-`/usr/local/bin`), and mining looks for the coordinator and miner next to
-`lattice-node`. Mixed versions are unsupported.
+`/usr/local/bin`). Mixed versions are unsupported.
 
 ## First run
 
 ```bash
-mkdir -p node && lattice init --root node [--peer <pubkey>@<host>:4001 ...]
-lattice up --root node          # background; log at node/log/lattice-node.log
-lattice status --root node      # Nexus: active height=… tip=… mempool=…
-lattice identity --root node    # peer string to give other operators
+lattice init --root node [--peer <pubkey>@<host>:4001 ...]
+lattice up --root node          # runs in the FOREGROUND and logs to the terminal
+# from another shell:
+lattice status --root node      # Nexus: active height=… best=… tip=… mempool=…
+lattice identity --root node    # the peer string to give other operators
+lattice down --root node        # or Ctrl-C
 ```
 
-Every subcommand takes `--root <dir>`, which defaults to the current
-directory. `lattice key generate` is the one exception.
+`lattice up` does not return and does not restart the node after a failure.
+To keep a node running, put it under a process manager (below). Every
+subcommand takes `--root <dir>`, which defaults to the current directory.
 
 ## CLI reference
 
 | Command | What it does |
 |---|---|
-| `init [--peer P]...` | Writes `lattice.json` (`listen` 4001, `rpc` 8080, optional `peers`) and creates `identity/Nexus.key` (0600). Refuses if `lattice.json` exists. |
-| `up [--foreground]` | Starts the node. If it is already running, it only reconciles **the hosted chain set**, live through `POST /hosted-chains`, and restarts as a fallback. `--foreground` is a supervisor for systemd or container PID 1 that respawns the node when it exits. |
-| `down` | SIGTERM, 30 s grace, then SIGKILL. Prints nothing if the node isn't running. |
-| `status` | One line per hosted chain from the local `/health`: `down`, `running, rpc unreachable`, or `<phase> height= tip= mempool=`. |
-| `identity` | Prints `Nexus: <pubkey>@<host>:<listen>`. Creates the key if it is missing. |
-| `wipe` | **Destructive, no prompt.** Deletes all of `<root>/chains/Nexus`. Keeps `lattice.json`, `identity/` and `specs/`. Refuses while the node is running. |
-| `key generate --out F` | Creates a wallet key file. See `lattice-transactions`. |
-| `child create …` | See `lattice-child-chains`. |
-| `mine start\|stop\|status` | See `lattice-mining`. |
-| `tx send\|deposit\|receipt\|withdraw` | See `lattice-transactions`. |
-| `emit-systemd [--binary P]` | Prints the systemd units to stdout. See below. |
+| `init [--peer P]...` | Writes `lattice.json` (`listen` 4001, `rpc` 8080) and creates `identity/Nexus.key` (0600). Refuses to overwrite a configuration. |
+| `up` | Runs the node in the foreground. |
+| `status` | One line per hosted chain: phase, height, best header height, tip, and what it waits on. Also chains configured but not running, settings waiting for a restart, and inert settings. |
+| `logs [--tail N]` | The running node's recent log lines. `--miner` reads the local mining loop's. |
+| `restart` | Restarts the node and waits until it answers. Refused while the configuration would not start the node. **Needs a process manager to start it again.** |
+| `down` | Stops the node cleanly (exit 0). |
+| `wipe` | **Destructive, no prompt.** Deletes chain storage. Keeps the identity, configuration, specs and tokens. A running node wipes as it restarts. |
+| `identity` | Prints the node's public key and peer string. |
+| `config get\|set\|unset`, `apply -f F --fragment N` | Read and change the configuration (below). |
+| `child create\|host\|unhost\|commit` | See `lattice-child-chains`. |
+| `mine start\|stop\|status\|run` | See `lattice-mining`. |
+| `key generate --out F`, `tx send\|deposit\|receipt\|withdraw` | See `lattice-transactions`. |
+| `pins list\|add <cid> [--fetch]\|remove <cid>` | Content the operator keeps. A pin holds that one Volume, not what it links to. |
+| `tokens list\|create <name>\|revoke <name>` | Tokens for the remote operator listener. |
+| `emit-systemd`, `emit-launchd` | Print service definitions for this root. |
 
-The CLI has no `peers`, `logs`, `restart`, `upgrade` or `backup` subcommand.
-
-**Gotcha: `lattice up` on a running node ignores every change except the
-hosted chain set.** It does not apply new ports, peers, public-read settings,
-rates or retention. Apply those with `lattice down && lattice up`. Under
-systemd, run `systemctl restart lattice-node` instead.
+Most commands ask the running node over its operator API. `init`,
+`identity`, `key`, `up`, `mine stop`, `emit-systemd` and `emit-launchd`
+work on the local machine only. `--node <url> --token-file <file>` in place
+of `--root` operates a node on another machine through its remote operator
+listener.
 
 ## Layout
 
 ```text
 <root>/
-  lattice.json            # the only config file; unknown keys are rejected
-  identity/Nexus.key      # P2P identity (not a wallet). 0600. Back it up separately.
-  specs/                  # immutable child specs, premine recipients, policy .wasm
-  chains/Nexus/           # ENTIRE runtime store; this is what `wipe` deletes
-    state.db  volumes.db  volume-bundles.db (cache)  .cookie  peers.json  storage.lock
-  run/  log/              # pid files; lattice-node.log, mine.log
+  lattice.json             configuration
+  config.d/                configuration fragments
+  identity/Nexus.key       the node's identity (not a wallet). 0600. Back it up separately.
+  specs/                   the specs of chains created here, and their policy modules
+  operator-tokens.json     remote operator tokens, when configured
+  miner.json               the miner's settings, when it mines here
+  run/  log/               the miner's pidfile and log, when it mines here
+  chains/Nexus/            the data directory; this is what `wipe` deletes
+    state.db               facts for every chain
+    volumes/               one content store per hosted chain
+    volume-bundles.db  peers.json  serving.json  storage.lock  .cookie
 ```
 
-The node rewrites `.cookie` at every start, so clients must re-read it.
+The node writes a new `.cookie` at every start, so clients must read it
+again. The node itself writes no log file and no pidfile: its log goes to
+standard error, where the process manager keeps it.
 
-## lattice.json
+## Configuration
 
-Minimal example:
+`lattice.json` plus the fragments in `config.d/`, merged. Change it with the
+CLI rather than by hand:
 
-```json
-{
-  "listen": 4001,
-  "rpc": 8080,
-  "peers": ["<pubkey>@seed.example.org:4001"],
-  "hostedChains": ["Nexus/Alpha"]
-}
+```bash
+lattice config get [a.b.c]
+lattice config set minRelayFee=5
+lattice config unset minRelayFee
+lattice status          # shows "waiting for a restart: …"
+lattice restart
 ```
 
-`references/lattice-json.md` has every key, its default and its validation
-rule, including `publicRead*`, `publicSubmit`, `minRelayFee`, `blockBodies`,
-`state`, `rpcAllowedOrigins` and the `mine` block. The rules that catch
-people out:
+**A running node applies `hostedChains` and child-chain `peers` at once.
+Every other key waits for the next start.** A change that does not check is
+refused and nothing is written.
 
-- Ports must be nonzero and distinct (`listen`, `rpc`, `publicRead`, and
-  `webSocket` unless it is 0).
-- `hostedChains` lists every parent before its children, with no
-  duplicates.
-- `peers` as an array is Nexus's list and **replaces** the built-in seeds.
-  `[]` means "connect to no one". If `peers` is absent, the node uses the
-  built-in seeds `seed1…4.lattice.build`. An object keyed by chain path adds
-  per-chain seeds. Older nodes refuse to start on the object form.
+`references/lattice-json.md` has the keys used most and the rules that
+catch people out. Every key is at
+https://lattice.build/docs/run/configuration/.
 
 ## Network surfaces
 
-| Port | Purpose | Exposure |
+| Surface | Default | Exposure |
 |---|---|---|
-| 4001/tcp (`listen`) | Ivy P2P for the whole tree | public if you accept inbound |
-| 4002/tcp+udp (`webSocket`) | browser peers (WS) + STUN, relay for NAT'd peers | public; 0 disables |
-| 8080/tcp (`rpc`) | operator RPC | **loopback only**, enforced by the daemon |
-| `publicRead` | GET-only reads (+ `POST /transactions` if `publicSubmit`) | 0.0.0.0, rate-limited |
+| Overlay (`listen`) | 4001/tcp | Public, to accept inbound peers. One port for every chain. |
+| Browser peers (`webSocket`) | 4002/tcp and udp | Public, to accept browsers. `0` turns it off. |
+| Operator API (`rpc`) | 8080/tcp | **Never.** Loopback only; the node refuses other addresses. |
+| Remote operator listener (`operatorListen`) | off | A private network only, or behind a TLS proxy: it is plain HTTP. |
+| Public reads (`publicRead`) | off | Public, once configured. |
 
-- **Operator RPC auth**: every route except `/health` needs
-  `curl --user "$(cat <root>/chains/Nexus/.cookie)"`. Requests with a
-  browser `Origin` get 403 unless that origin is in `rpcAllowedOrigins`, and
-  they still need the cookie.
-- **NAT**: outbound connections work without any configuration, and
-  hole-punching via relaying peers handles NAT-to-NAT links (but not
-  symmetric NAT). Behind NAT or a proxy, set `externalAddress` (a host only,
-  no port) so the node doesn't announce an unreachable address.
+- **Operator API auth**: every route except `/health` needs
+  `curl --user "$(cat <root>/chains/Nexus/.cookie)"`. A request with a
+  browser `Origin` gets 403 unless that origin is in `rpcAllowedOrigins`,
+  and it still needs the cookie.
+- **NAT**: a node behind a home router connects out, and reaches other such
+  nodes through peers that relay, with nothing configured. Set
+  `externalAddress` (a host, no port) when the address peers observe is not
+  dialable, as behind a proxy.
 - **No TLS in the node.** Put a TLS-terminating proxy in front of public
-  reads. Never expose `/status`, `/metrics`, `/core/snapshot` or operator
-  POST routes.
+  reads. The proxy must allow no more than the listener does: never
+  `/status`, `/metrics`, `/core/snapshot` or a POST route other than public
+  submit.
 
 ## Public reads, explorer listing, public submit
 
-1. Set `"publicRead": 8081` and put HTTPS in front of it.
-2. Set `"publicReadURL": "https://reads.example.org"` (absolute, no query,
-   no credentials). One URL covers every hosted level via `?chainPath=`.
-3. Optionally set `"publicSubmit": true` (requires `publicRead`; default
-   budget 10 submits/s). Public submits are never journaled.
-4. Run `lattice down && lattice up`.
-5. Verify from a parent host:
+1. `lattice config set publicRead=8081`, and put HTTPS in front of it.
+2. `lattice config set publicReadURL=https://reads.example.org`. One URL
+   covers every chain the host serves, selected with `?chainPath=`.
+3. Optionally `lattice config set publicSubmit=true` (needs `publicRead`).
+   A public submit is not written to the node's journal.
+4. `lattice restart`.
+5. Verify from the parent's side:
    `curl -s 'https://<parent-reads>/api/chain/endpoints?chainPath=Nexus/Alpha'`.
-   Explorers walk this endpoint one level at a time, so no permission is
+   An explorer walks this route one level at a time, so no permission is
    needed.
 
-Behind a proxy that collapses client addresses (common for L4 proxies), set
-`publicReadRate` and `publicReadExpensiveRate` to 0 and keep
-`publicReadMaxRate`. Otherwise every client shares one bucket and gets 429s.
+The node's rate limits are listener-wide (`publicReadMaxRate`, 200 requests
+a second; `publicSubmitRate`, 10). Put per-client limits in the proxy.
+`publicReadRate` and `publicReadExpensiveRate` are accepted and ignored.
 
-## systemd
-
-lattice-node ships with `deploy/lattice-node.service` (`User=lattice`,
-`ExecStart=/usr/local/bin/lattice up --foreground --root /var/lib/lattice`,
-`LimitNOFILE=65536`). Use it as follows:
+## Remote control
 
 ```bash
-sudo useradd --system --home /var/lib/lattice lattice   # if absent
-sudo install -d -o lattice -g lattice -m 0750 /var/lib/lattice   # useradd --system doesn't create it
-sudo install -m 0644 deploy/lattice-node.service /etc/systemd/system/
-sudo -u lattice lattice init --root /var/lib/lattice --peer '<key>@<host>:4001'
-sudo systemctl daemon-reload && sudo systemctl enable --now lattice-node
+# Beside the node, once:
+lattice config set operatorListen=10.0.0.5:8090 operatorTokens=operator-tokens.json --root R
+lattice restart --root R
+lattice tokens create ops --role admin --out ops.token --root R
+# Anywhere on that network:
+lattice status --node http://10.0.0.5:8090 --token-file ops.token
 ```
 
-`lattice emit-systemd` prints **two** units, `lattice-tree.service` and (if
-`mine` is configured) `lattice-mine.service`, concatenated on stdout. Split
-them into two files under `/etc/systemd/system/`. Do not redirect the output
-into one file as the docs suggest, because systemd won't load it. The
-generated units have no `User=` or `LimitNOFILE`, so add both.
+`--role read` allows every GET; `--route "METHOD /path"` (repeatable) allows
+only those routes. The secret is shown once.
 
-Under systemd, **`lattice down` is undone by the supervisor**. Run
-`systemctl stop lattice-node` instead.
+## Process managers
 
-## Upgrades and flag days
+```bash
+lattice emit-systemd --root /var/lib/lattice
+```
 
-There are no migrations and no mixed-version operation.
+prints two units: `lattice-tree.service`, and `lattice-mine.service` when
+the root holds miner settings. Save each as its own file under
+`/etc/systemd/system/`, then
+`systemctl daemon-reload && systemctl enable --now lattice-tree lattice-mine`.
 
-- **Compatible release**: stop the miner and the node, replace all four
-  binaries from one release, and start them again.
-- **Incompatible release (flag day)**: the node refuses to start with
-  `The node store is incompatible (…); stop the process, wipe its complete
-  configured storage directory, and restart.` Run:
+- The node's unit runs `lattice up --root <root>` with `Restart=on-failure`.
+  Its log is the journal: `journalctl -u lattice-tree`.
+- `systemctl reload lattice-tree` re-reads the configuration.
+- The lattice-node repository also ships ready-made units in `deploy/`,
+  named `lattice-node.service` and `lattice-mining-coordinator.service`. Use
+  one set or the other, and use that set's unit names.
+- macOS: `lattice emit-launchd --root ~/lattice` prints a launchd job. Its
+  output goes to `<root>/log/lattice-node.log`.
 
-  ```bash
-  systemctl stop lattice-mining-coordinator lattice-node   # or: lattice mine stop; lattice down
-  lattice wipe --root /var/lib/lattice                     # keeps identity, lattice.json, specs
-  # install all four binaries from the same release
-  systemctl start lattice-node lattice-mining-coordinator
-  ```
+Exit codes a manager acts on: 0 stopped on request (leave it stopped), 75
+restart requested (start it again), 78 the configuration does not check
+(leave it stopped until fixed; the reason is on standard error).
 
-  Nexus genesis is rebuilt deterministically. Child chains resync from peers,
-  or are re-mined from `specs/`.
+## Upgrades
 
-Before a wipe, confirm with the user and check what's at `--root`. It
+Install all four binaries from the same release, then restart the node and
+the miner.
+
+Releases do not migrate stored data. When a release changes the storage
+schema, the node refuses to start with `The node store is incompatible
+(…); stop the process, wipe its complete configured storage directory, and
+restart.` Then:
+
+```bash
+systemctl stop lattice-mine lattice-tree
+lattice wipe --root /var/lib/lattice    # keeps identity, configuration, specs and tokens
+# install all four binaries from the same release
+systemctl start lattice-tree lattice-mine
+```
+
+Nexus's genesis is recreated from the release. Child chains are synced from
+their peers, or mined again from their specs.
+
+**Before a wipe, confirm with the user and check what is at `--root`.** It
 deletes all chain data.
 
 ## Backups
 
-Back up only while the node is **stopped**. `state.db` and `volumes.db` are
-one unit: never combine files from different snapshots, and never repair
-them by hand.
+Back up only while the node is **stopped**. `state.db` and `volumes/` are
+one recovery unit: never combine them from different backups, and never
+repair them by hand.
 
 ```bash
-systemctl stop lattice-mining-coordinator lattice-node
-tar -C /var/lib/lattice -czf lattice-backup.tgz lattice.json identity specs chains/Nexus
-systemctl start lattice-node lattice-mining-coordinator
+systemctl stop lattice-mine lattice-tree
+tar -C /var/lib/lattice -czf lattice-backup.tgz lattice.json config.d identity specs chains/Nexus
+systemctl start lattice-tree lattice-mine
 ```
 
-Wallet key files live wherever `--out` put them, so back them up separately.
+Back up `identity/Nexus.key` separately as well. Wallet key files live
+wherever `--out` put them: back them up separately too.
 
 ## Storage retention
 
-`blockBodies: none` keeps only the tip and genesis bodies. `state: tip|none`
-serves state only at the tip, or only what the last block touched. These
-settings change what the node stores and serves, never which tip it picks.
-**If a chain's only miner runs `blockBodies: none`, nobody else can sync
-that chain**, so explorer and public nodes should keep `all`.
-`volumes.db` does not shrink; freed space is reused.
+| Setting | Values |
+|---|---|
+| `blockBodies` | `all` (default) keeps every block body; `none` keeps only each chain's tip and genesis. |
+| `state` | `all` (default); `recent` keeps each chain's current state and what its last `stateWindow` blocks (64) replaced; `none` keeps only what the blocks at the tip read and created. |
+
+These change what the node stores and serves, never which tip it picks.
+**Run `blockBodies: all` on a node that mines a chain others should follow,
+and on a node an explorer reads**: if a chain's only miner runs `none`,
+nobody else can sync that chain. The database files do not shrink when rows
+are deleted; to reclaim space, sync the node again from an empty data
+directory.
+
+Unhosting a chain deletes its data.
 
 ## Safety checklist
 
-- Back up `identity/Nexus.key`, `lattice.json`, `specs/` and wallet keys.
-- Don't run `lattice-node` directly without `--identity-key`. Its default
-  identity location is inside the wipeable store.
-- Keep the RPC on loopback. Expose public reads only through `publicRead` or
-  an allowlisting proxy (`deploy/read-replica/` in the lattice-node repo).
-- Configure a mining recipient for every chain that should pay out.
+- Back up `identity/Nexus.key`, `lattice.json`, `config.d/`, `specs/` and
+  wallet keys.
+- Keep the operator API on loopback. Serve the public only from
+  `publicRead`, or a proxy that allows no more than it does.
+- Keep the remote operator listener on a private network.
+- Start the node with `lattice up`. `lattice-node` started with flags and
+  no `--identity-key` keeps its identity inside the data directory, which a
+  wipe deletes.
+- Give the miner a recipient for every chain that should pay out.
 
 For error messages and stuck nodes, use the `lattice-troubleshooting` skill.

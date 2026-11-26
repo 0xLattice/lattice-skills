@@ -1,90 +1,81 @@
-# lattice.json — every key
+# Node configuration: quick reference
 
-`lattice up` turns each key into a `lattice-node` flag. Any key not listed
-here is rejected with `unknown lattice.json key(s): …`.
+The authoritative list of every key, its default and its rules is the
+node's [Configuration](https://lattice.build/docs/run/configuration/) page.
+This file keeps the keys an operator touches most and the rules that catch
+people out. When the two disagree, the page is right; on a user's machine,
+`lattice config get` shows what the node actually reads.
 
-| Key | Type | Node flag | Default | Validation / notes |
-|---|---|---|---|---|
-| `listen` | port | `--listen-port` | 4001 (written by `init`) | nonzero, unique |
-| `rpc` | port | `--rpc-port` | 8080 (written by `init`) | nonzero, unique; always loopback |
-| `webSocket` | port | `--websocket-port` | the node tries 4002 and continues without it if the bind fails | 0 = off; if set explicitly, a failed bind is fatal |
-| `peers` | array, or object keyed by chain path | `--peer` / `--no-default-peers` / `--chain-peer P=peer` | built-in Nexus seeds | every object key must be a hosted chain |
-| `externalAddress` | host (no port) | `--external-address` | none | set when the observed address isn't dialable |
-| `publicRead` | port | `--public-read-port` | off | nonzero, unique; binds 0.0.0.0 |
-| `publicReadRate` | req/s | `--public-read-rate` | 25 | per client; 0 = no per-client cap |
-| `publicReadExpensiveRate` | req/s | `--public-read-expensive-rate` | 1 | per client, for expensive routes |
-| `publicReadMaxRate` | req/s | `--public-read-max-rate` | 200 | for the whole listener |
-| `publicReadFetches` | int | `--public-read-fetches` | 4 | concurrent peer fetches on a miss; 0 = serve only content the node holds |
-| `publicReadURL` | URL | `--public-read-url` | none | absolute http(s), no credentials, query or fragment |
-| `publicSubmit` | bool | `--public-submit` | false | requires `publicRead` |
-| `publicSubmitRate` | req/s | `--public-submit-rate` | 10 | for the whole listener |
-| `minRelayFee` | uint64 | `--min-relay-fee` | 0 | relay policy, not consensus |
-| `servingMaxConcurrent` | int | `--serving-max-concurrent` | 64 | content-serving concurrency for peers |
-| `servingMaxInFlightVolumeBytes` | int | `--serving-max-in-flight-volume-bytes` | Ivy default | |
-| `blockBodies` | `"all"` / `"none"` | `--block-bodies` | all | `none` prunes at the next start |
-| `state` | `"all"` / `"tip"` / `"none"` | `--state` | all | |
-| `announceLifetime` | seconds | `--announce-lifetime` | 1200 | 1…86400; DHT provider record lifetime |
-| `hostedChains` | [path] | `--host-chain P[=spec]` | none | Nexus-rooted, each parent before its children, no duplicates |
-| `rpcAllowedOrigins` | [origin] | `--rpc-allowed-origin` | none (browsers refused) | e.g. `chrome-extension://<id>`; the cookie is still required |
-| `mine` | object | used only by `lattice mine` | none | see below |
+## Where configuration lives
 
-## `peers`
+| File | Holds | Read by |
+|---|---|---|
+| `<root>/lattice.json` | The node's configuration. `lattice init` writes `listen` and `rpc`. | the node |
+| `<root>/config.d/<name>.json` | Fragments layered over `lattice.json` in name order. `lattice config set` writes `config.d/operator.json`. | the node |
+| `<root>/miner.json` | The miner's settings ([Mining](https://lattice.build/docs/run/mining/)). | `lattice mine` only |
 
-```jsonc
-"peers": ["<pubkey>@a.example.org:4001", "<pubkey>@b.example.org:4001"]   // Nexus list; replaces the seeds
-"peers": []                                                                // connect to no one (inbound only)
-"peers": { "Nexus": ["…"], "Nexus/Alpha": ["<pubkey>@c.example.org:4001"] } // per-chain seeds
-```
+An unknown key is refused. A configuration that does not check stops the
+node at start with the reason (exit 78).
 
-A peer string is `<pubkey>@host:port`, the output of `lattice identity`.
-When a chain has fewer than 8 peers (`--peer-target`), or has stalled, the
-node dials remembered peers (`peers.json`, advisory, safe to delete). For
-child chains it also searches the DHT rendezvous. Below 2 peers
-(`--peers-before-seeds`) it dials the seeds.
+## What applies when
 
-## `mine`
+- A running node applies `hostedChains` and child-chain `peers` at once.
+  **Every other key waits for the next start** (`lattice restart`);
+  `lattice status` lists what waits.
+- A change that does not check is refused and nothing is written.
+- A file edited by hand is read at the next start, or on `SIGHUP`.
+- Host and unhost chains with `lattice child host` and `lattice child
+  unhost` rather than editing `hostedChains`.
 
-```json
-"mine": {
-  "worker": "cpu",
-  "workers": 2,
-  "batchSize": 2000000000,
-  "recipients": { "Nexus": "<address>", "Nexus/Alpha": "<address>" },
-  "minWork": { "Nexus": "2^32" },
-  "minBlockIntervalSeconds": 10,
-  "templateTimeoutSeconds": 60,
-  "roundDeadlineMultiplier": 10
-}
-```
+## Keys used most
 
 | Key | Default | Meaning |
 |---|---|---|
-| `worker` | `cpu` | `cpu` = the bundled `lattice-miner`; otherwise a path to a worker executable |
-| `workers` | 1 | parallel worker processes |
-| `batchSize` | 2,000,000,000 | total nonces searched per round |
-| `recipients` | none | address for each chain. **A chain left out burns its reward and fees.** |
-| `minWork` | none | local search filter, `2^N` or a decimal. Not consensus. |
-| `minBlockIntervalSeconds` | none | minimum spacing between parent template builds |
-| `templateTimeoutSeconds` | 60 | 1…60 |
-| `roundDeadlineMultiplier` | 10 | ≥1; headroom on the round deadline |
+| `listen` | 4001 | The overlay port, TCP. One port for every hosted chain. |
+| `rpc` | 8080 | The operator API port. Loopback only. |
+| `webSocket` | 4002 if it can bind | The port browsers reach the node on. `0` turns it off. |
+| `externalAddress` | observed | The host other nodes can reach this one at. A host, no port. |
+| `peers` | built-in seeds | Peers by chain path, each `<public-key>@host:port`. |
+| `hostedChains` | none | Child chain paths this node hosts. Nexus is always hosted. |
+| `publicRead` | off | Port of the public read listener, on all interfaces. |
+| `publicReadURL` | none | This host's public read URL, declared for every chain it hosts. |
+| `publicSubmit` | false | Also accept `POST /transactions` on the read listener. Needs `publicRead`. |
+| `publicReadMaxRate` | 200 | Requests per second the read listener accepts, all clients together. `0` removes the limit. |
+| `publicSubmitRate` | 10 | Requests per second for public submits. |
+| `minRelayFee` | 1 | The smallest fee this node admits to its pool. Node policy, not consensus. |
+| `blockBodies` | `all` | `all`, or `none` to keep only each chain's tip and genesis. |
+| `state` | `all` | `all`, `recent` or `none`. |
+| `stateWindow` | 64 | With `state: recent`, how many blocks of replaced state each chain keeps. |
+| `rpcAllowedOrigins` | none | Browser origins allowed on the operator API. The cookie is still required. |
+| `operatorListen`, `operatorTokens` | off | The remote operator listener's `address:port` and its token file. |
 
-Every chain named in `recipients` or `minWork` must be hosted. The retired
-keys `mine.chain` and `mine.rewards` are rejected.
+## Rules that catch people out
 
-## Daemon-only flags (no lattice.json key)
+- **Ports** must be nonzero and unique. Only `webSocket` may be `0`.
+- **Nexus's `peers` list replaces the built-in seeds.** An empty list means
+  connect to no one. A child chain's list is extra seeds for that chain.
+  An array instead of an object is Nexus's list.
+- **`publicReadRate` and `publicReadExpensiveRate` are accepted and
+  ignored.** The node's limits are listener-wide; put per-client limits in
+  a proxy in front.
+- **Mining settings are not in `lattice.json`.** They are in `miner.json`.
+  The node ignores a `mine` object in `lattice.json`.
+- **`state: tip`** is accepted and means `recent`.
+- **A setting for a chain that is not hosted** (its peers or windows) is
+  not an error. `lattice status` lists it as inert.
 
-`--rpc-bind` (loopback values only), `--rpc-cookie-file`,
-`--peer-target` (8), `--peers-before-seeds` (2),
-`--minimum-peer-key-bits` (0), `--overlay-max-connections-per-netgroup`,
-`--peer-search-interval` (600 s; 0 turns search off, for isolated nodes
-only).
+```json
+"peers": {
+  "Nexus": ["<public-key>@node.example:4001"],
+  "Nexus/Alpha": ["<public-key>@alpha-host.example:4001"]
+}
+```
+
+A peer string is `<public-key>@host:port`, as `lattice identity` prints it.
 
 ## Environment variables
 
-| Var | Effect |
+| Variable | Effect |
 |---|---|
-| `LATTICE_SYNC_TRACE=1` | Sync and acquisition traces to stderr (that is, `log/lattice-node.log`). Any other non-empty value is a file path. Produces a lot of output, so use it only while diagnosing. |
-| `LATTICE_SYNC_TRACE_MAX_BYTES` | Size cap for the trace file (default 64 MiB). |
-| `LATTICE_FORBID_DEFAULT_PEERS=1` | Refuse to start on the built-in seeds. Use it in tests or CI so they never join the public network. |
-
-The CLI itself reads no environment variables.
+| `LATTICE_SYNC_TRACE=1` | Sync tracing on the node's standard error. Any other non-empty value is a file prefix. It is verbose: use it only while diagnosing. |
+| `LATTICE_FORBID_DEFAULT_PEERS=1` | Refuse to start on the built-in seeds. Use it in tests and CI so they never join the public network. |
