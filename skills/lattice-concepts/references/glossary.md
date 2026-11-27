@@ -8,68 +8,90 @@ authority for every consensus term.
 
 ## Basic terms
 
-- **Lattice**: a proof-of-work protocol for a tree of chains. One root
-  chain, Nexus, and any number of child chains under it.
-- **Nexus**: the single root chain. Every chain path begins with `Nexus`
-  (case-sensitive). It is the only chain whose first block is fixed in
-  advance.
-- **Child chain**: any chain other than Nexus. Its blocks are committed
-  inside its parent's blocks. It validates its own blocks, has its own coin
-  and parameters, and chooses its own tip.
+Each entry starts with a plain definition; the sentences after it add the
+detail the rest of the documentation relies on.
+[How Lattice works](https://lattice.build/docs/learn/how-it-works/)
+introduces the same ideas in order, with diagrams.
+
+### The network
+
+- **Lattice**: a network of proof-of-work blockchains arranged as a tree.
+  One root chain, Nexus, and any number of child chains under it.
+- **Nexus**: the root chain. There is exactly one. Every chain path begins
+  with `Nexus` (case-sensitive), and it is the only chain whose first block
+  is fixed in advance.
+- **Child chain**: any chain other than Nexus. It validates its own blocks,
+  has its own coin and parameters, and chooses its own tip. Its blocks are
+  committed inside its parent's blocks.
 - **Parent**: the chain one level toward Nexus. A chain can be the child of
   one chain and the parent of others.
-- **Chain path**: a chain's identity: its full path from Nexus, such as
+- **Chain path**: a chain's name: its full path from Nexus, such as
   `Nexus/Payments/Rollups`.
-- **Block**: one step of a chain: a list of transactions, the state before
-  and after them, a link to the previous block, and the proof of work that
-  secures it.
-- **Height**: a block's distance from its chain's first block, which is at
+- **Node**: a program that follows chains, validates their blocks and
+  serves them. `lattice-node` is the full node.
+
+### Blocks
+
+- **Block**: one step of a chain. It holds a list of transactions, the
+  state before and after them, a link to the previous block, and the proof
+  of work that secures it.
+- **Genesis**: a chain's first block.
+- **Height**: a block's distance from its chain's genesis, which is at
   height 0.
-- **Genesis**: a chain's first block, at height 0.
-- **Tip**: the last block of the path a chain's fork choice prefers. A node
-  acts on its heaviest *executed* tip: a block it has only weighed is never
-  served as the head or built on.
+- **Tip**: a chain's newest block: the end of the branch its fork choice
+  prefers. A node acts on its heaviest *executed* tip: a block it has only
+  weighed is never served as the head or built on.
+- **State**: what a chain holds after a block: balances, nonces, key–value
+  data, and the records of cross-chain exchanges.
+- **Reorganization** (reorg): a chain's tip moving to a different branch
+  because that branch became heavier. It is local to one chain.
+- **Finality**: a guarantee that a block can no longer be replaced. Lattice
+  has none. A strictly heavier branch may reorganize a chain at any depth,
+  and there is no standard confirmation depth. A node's operator may set a
+  node-local finality window; that is one node's policy and not a protocol
+  rule.
+
+### Mining
+
+- **Mining**: searching, by trial and error, for a number (a nonce) that
+  makes a block's hash meet the block's target. The search is the proof of
+  work.
+- **Reward**: the new coin a block creates, by a schedule fixed in the
+  chain's spec.
+- **Coinbase**: a block's reward plus the fees of its transactions. It is
+  credited to the block's reward recipient. With no recipient it is burned.
+- **Reward recipient**: the address a block pays. There is one per block,
+  committed in the header. It needs no signature and no key on the mining
+  host.
+
+### Accounts and transactions
+
+- **Key**: the secret that controls an account: an Ed25519 private key.
+  Whoever holds it controls the account.
+- **Address**: an account's name. It is the CID of the key's public half
+  and looks like `bafyrei…`.
 - **Transaction**: a signed request to change a chain's state: move coin,
   write key–value data, or take a step in a cross-chain exchange.
-- **Address**: an account's name: the CID of its Ed25519 public key. It
-  looks like `bafyrei…`.
-- **Key**: the Ed25519 private key that signs for an address. Whoever holds
-  it controls the account.
 - **Signer**: an address that signs a transaction. A debit from an account
   requires that account's signature; a credit does not.
 - **Nonce**: a counter that makes each transaction usable once. Only a
   transaction's first signer has a nonce checked and advanced: the
   transaction must carry that signer's next nonce. Co-signers' nonces are
   neither checked nor advanced.
-- **Fee**: what a transaction debits beyond what it credits. There is no fee
-  field.
+- **Fee**: what a transaction pays the miner. It is what the transaction
+  debits beyond what it credits. There is no fee field.
 - **Mempool** (or pool): a node's own set of transactions waiting to be put
   in a block. It is node policy, never consensus: each node decides what it
   admits, for example with a minimum fee (`minRelayFee`).
-- **Mining**: searching for a nonce whose hash meets a block's target. The
-  search is the proof of work.
-- **Reward**: the new coin a block creates, by a schedule fixed in the
-  chain's spec.
-- **Coinbase**: a block's reward plus the fees of its transactions. It is
-  credited to the block's reward recipient. With no recipient it is burned.
-- **Reward recipient**: one address per block, committed in the header. It
-  needs no signature and no key on the mining host.
-- **Reorganization** (reorg): a chain's tip moving to a different branch
-  because that branch became heavier. It is local to one chain.
-- **Finality**: Lattice has none. A strictly heavier branch may reorganize a
-  chain at any depth, and there is no standard confirmation depth. A node's
-  operator may set a node-local finality window; that is one node's policy
-  and not a protocol rule.
-- **CID**: a content identifier: a hash of some bytes. Blocks, transactions,
-  specs, state and policy modules are all named by CID, so anyone may supply
-  the bytes and the receiver checks them.
-- **Volume**: one root CID plus the exact `(CID, bytes)` entries published
-  with it. It is the unit in which content is stored, transferred and
-  pinned.
-- **State**: what a chain holds after a block: balances, nonces, key–value
-  data, and the records of cross-chain exchanges.
-- **Node**: a program that follows chains, validates their blocks and serves
-  them. `lattice-node` is the full node.
+
+### Content
+
+- **CID**: a content identifier: a fingerprint (hash) of some bytes.
+  Blocks, transactions, specs, state and policy modules are all named by
+  CID, so anyone may supply the bytes and the receiver checks them.
+- **Volume**: a bundle of content: one root CID plus the exact
+  `(CID, bytes)` entries published with it. It is the unit in which content
+  is stored, transferred and pinned.
 
 ## Chains
 
